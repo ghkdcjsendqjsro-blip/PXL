@@ -30,6 +30,8 @@ export function initFeedback() {
   const status = document.querySelector('#feedback-list-status');
   const refresh = document.querySelector('#feedback-refresh');
   const more = document.querySelector('#feedback-more');
+  const imageDialog = document.querySelector('#feedback-image-dialog');
+  const enlargedImage = document.querySelector('#feedback-image-dialog-image');
   let cursor = null;
   let loading = false;
   let posting = false;
@@ -37,6 +39,7 @@ export function initFeedback() {
   let sequence = 0;
   let generatedAttachment = null;
   let includeAttachment = false;
+  let imageOpener = null;
   const shown = new Set();
   const dateFormat = new Intl.DateTimeFormat('ko-KR', { timeZone:'Asia/Seoul', year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit' });
 
@@ -87,6 +90,11 @@ export function initFeedback() {
   window.addEventListener('pagehide', event => {
     if (!event.persisted && generatedAttachment) URL.revokeObjectURL(generatedAttachment.previewUrl);
   });
+  imageDialog.addEventListener('close', () => {
+    enlargedImage.removeAttribute('src');
+    (imageOpener?.isConnected ? imageOpener : refresh).focus({ preventScroll: true });
+    imageOpener = null;
+  });
 
   function append(item) {
     if (shown.has(item.id)) return;
@@ -101,11 +109,16 @@ export function initFeedback() {
     const attachment = item.attachment;
     if (typeof attachment?.prompt === 'string' && attachment.imageUrl === `/api/feedback-image?id=${encodeURIComponent(item.id)}`) {
       const preview = document.createElement('div'); preview.className = 'feedback-item-attachment';
-      const link = document.createElement('a');
-      link.href = attachment.imageUrl;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.setAttribute('aria-label', '첨부 이미지 크게 보기');
+      const openImage = document.createElement('button');
+      openImage.type = 'button';
+      openImage.className = 'feedback-item-image-button';
+      openImage.setAttribute('aria-label', '첨부 이미지 크게 보기');
+      openImage.setAttribute('aria-haspopup', 'dialog');
+      openImage.addEventListener('click', () => {
+        imageOpener = openImage;
+        enlargedImage.src = attachment.imageUrl;
+        imageDialog.showModal();
+      });
       const image = document.createElement('img');
       image.alt = '공개 피드백에 첨부된 픽셀 이미지';
       image.width = image.height = 76;
@@ -116,7 +129,7 @@ export function initFeedback() {
       label.textContent = '사용한 프롬프트';
       const prompt = document.createElement('p'); prompt.className = 'feedback-item-prompt';
       prompt.textContent = attachment.prompt || emptyPrompt;
-      link.append(image); description.append(label,prompt); preview.append(link,description); row.append(preview);
+      openImage.append(image); description.append(label,prompt); preview.append(openImage,description); row.append(preview);
     }
     list.append(row);
   }

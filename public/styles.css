@@ -228,6 +228,14 @@ h1 {font-size:48px;line-height:1.25;letter-spacing:-2.8px;font-weight:850}
 .feedback-list time {font-family:"Courier New",monospace;font-size:10px;color:var(--muted);font-weight:400;white-space:nowrap}
 .feedback-list p {font-size:12px;line-height:1.8;color:#4f3a5f;white-space:pre-wrap;overflow-wrap:anywhere}
 .feedback-item-attachment {margin-top:10px;padding:10px;border:1px solid var(--soft-line);border-radius:5px;background:#fcfaff}
+.feedback-item-image-button {display:block;padding:0;border-radius:3px;background:transparent;cursor:zoom-in}
+.feedback-item-image-button:hover img {border-color:var(--primary)}
+html:has(.feedback-image-dialog[open]) {overflow:hidden}
+.feedback-image-dialog {width:min(760px,calc(100% - 24px));width:min(760px,calc(100% - 24px),max(220px,calc(100dvh - 78px)));max-height:calc(100% - 24px);max-height:calc(100dvh - 24px);padding:12px;border:2px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);box-shadow:5px 5px 0 var(--line);overflow:auto}
+.feedback-image-dialog::backdrop {background:rgb(40 16 68 / 70%)}
+.feedback-image-dialog-header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.feedback-image-dialog-header h2 {font-size:16px}
+.feedback-image-dialog img {display:block;width:100%;max-height:calc(100vh - 104px);max-height:calc(100dvh - 104px);object-fit:contain;background:#f5f0ff;image-rendering:pixelated}
 .feedback-more {width:100%;min-height:40px;margin-top:12px;font-size:12px}
 .feedback-public-note {margin-top:14px;text-align:center;font-size:10px;color:var(--muted)}
 .site-footer {background:#e9dff3;border-top:1px solid #c5b1d8;padding:28px 0 30px}

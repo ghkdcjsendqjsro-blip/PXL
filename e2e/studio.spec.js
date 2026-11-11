@@ -183,6 +183,28 @@ test('feedback includes the AI result and its original prompt only when selected
   await expect(publicAttachment.locator('img')).toHaveAttribute('src', imagePath);
   await publicAttachment.scrollIntoViewIfNeeded();
   await expect.poll(() => publicAttachment.locator('img').evaluate(image => image.naturalWidth)).toBe(1024);
+
+  const thumbnailButton = publicAttachment.getByRole('button', { name: '첨부 이미지 크게 보기' });
+  const thumbnail = thumbnailButton.locator('img');
+  const thumbnailWidth = await thumbnail.evaluate(image => image.clientWidth);
+  const dialog = page.getByRole('dialog', { name: '첨부 이미지', exact: true });
+  const dialogImage = dialog.locator('img');
+  await thumbnail.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialogImage).toHaveAttribute('src', imagePath);
+  await expect(dialogImage).toBeVisible();
+  await expect.poll(() => dialogImage.evaluate(image => image.clientWidth)).toBeGreaterThan(thumbnailWidth);
+  expect(page.context().pages()).toEqual([page]);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(thumbnailButton).toBeFocused();
+
+  await thumbnailButton.click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: '닫기', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(thumbnailButton).toBeFocused();
 });
 
 for(const width of [375,320])test(`responsive ${width}px: no overflow and demo controls work`,async({page})=>{
