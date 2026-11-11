@@ -65,9 +65,10 @@ export function initFeedback() {
   function setGeneratedAttachment(attachment) {
     const previous = generatedAttachment;
     if (attachment?.pngBlob === previous?.pngBlob && attachment?.generationId === previous?.generationId && attachment?.prompt === previous?.prompt) return;
+    if (includeAttachment) consent.checked = false;
     if (previous) URL.revokeObjectURL(previous.previewUrl);
     generatedAttachment = attachment ? { ...attachment, previewUrl: URL.createObjectURL(attachment.pngBlob) } : null;
-    if (attachment?.generationId !== previous?.generationId) includeAttachment = Boolean(attachment);
+    if (attachment?.generationId !== previous?.generationId) includeAttachment = false;
     if (generatedAttachment) {
       attachmentImage.src = generatedAttachment.previewUrl;
       attachmentPrompt.textContent = generatedAttachment.prompt || emptyPrompt;
@@ -75,7 +76,6 @@ export function initFeedback() {
       attachmentImage.removeAttribute('src');
       attachmentPrompt.textContent = '';
     }
-    if (includeAttachment) consent.checked = false;
     showAttachment();
   }
 
@@ -167,7 +167,10 @@ export function initFeedback() {
       const signature = JSON.stringify(values);
       if (!pending || pending.signature !== signature) pending = {signature,id:crypto.randomUUID()};
       await requestJson('/api/feedback', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientRequestId:pending.id,...values})});
-      pending = null; form.reset(); count();
+      pending = null;
+      form.reset(); count();
+      includeAttachment = false;
+      showAttachment();
       notify('피드백이 등록됐어요. 의견을 나눠 주셔서 고마워요.','success');
       // 이전 조회를 무효화하고 새 글을 포함한 첫 페이지를 읽는다.
       if (loading) { sequence++; loading = false; }

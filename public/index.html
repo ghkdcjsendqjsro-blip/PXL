@@ -130,8 +130,8 @@
             <div class="label-row feedback-content-label"><label for="feedback-content">피드백</label><span id="feedback-count" class="character-count">0 / 500</span></div><textarea id="feedback-content" rows="4" placeholder="좋았던 점, 아쉬웠던 점, 보고 싶은 기능을 알려 주세요." aria-describedby="feedback-count feedback-privacy"></textarea>
             <div class="bot-field" aria-hidden="true"><label for="feedback-website">Website</label><input id="feedback-website" type="text" name="website" tabindex="-1" autocomplete="off"></div>
             <div id="feedback-attachment" class="feedback-attachment" hidden>
-              <div class="feedback-attachment-heading"><strong>최근 생성 결과</strong><button id="feedback-attachment-toggle" class="text-button" type="button" aria-controls="feedback-attachment-preview">첨부 빼기</button></div>
-              <div id="feedback-attachment-preview" class="feedback-attachment-preview">
+              <div class="feedback-attachment-heading"><strong>최근 생성 결과</strong><button id="feedback-attachment-toggle" class="text-button" type="button" aria-controls="feedback-attachment-preview" aria-expanded="false">첨부하기</button></div>
+              <div id="feedback-attachment-preview" class="feedback-attachment-preview" hidden>
                 <img id="feedback-attachment-image" alt="피드백에 첨부할 픽셀 이미지" width="76" height="76">
                 <div><strong class="feedback-prompt-label">사용한 프롬프트</strong><p id="feedback-attachment-prompt"></p></div>
               </div>

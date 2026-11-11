@@ -107,7 +107,7 @@ test('feedback: safe public text, pagination, consent and UUID retry',async({pag
   expect(posts[0].clientRequestId).toBe(posts[1].clientRequestId);await expect(page.locator('#feedback-content')).toBeEmpty();
 });
 
-test('feedback automatically attaches the AI result and the prompt used to create it', async ({ page }) => {
+test('feedback includes the AI result and its original prompt only when selected', async ({ page }) => {
   const source = await sharp({ create: { width: 512, height: 512, channels: 3, background: '#c388b8' } }).png().toBuffer();
   const postBodies = [];
   const items = [];
@@ -144,12 +144,15 @@ test('feedback automatically attaches the AI result and the prompt used to creat
   await page.locator('#text-prompt').fill(` ${usedPrompt} `);
   await page.locator('#generate-button').click();
   await expect(page.locator('#result-kind')).toHaveText('AI로 만든 픽셀 이미지');
+  const toggle = page.locator('#feedback-attachment-toggle');
+  await expect(toggle).toHaveText('첨부하기');
+  await expect(page.locator('#feedback-attachment-preview')).toBeHidden();
+  await toggle.click();
   await expect(page.locator('#feedback-attachment-image')).toBeVisible();
   await expect(page.locator('#feedback-attachment-prompt')).toHaveText(usedPrompt);
   await page.locator('#text-prompt').fill('다음 작품에 쓸 설명');
   await expect(page.locator('#feedback-attachment-prompt')).toHaveText(usedPrompt);
 
-  const toggle = page.locator('#feedback-attachment-toggle');
   await toggle.click();
   await expect(page.locator('#feedback-attachment-preview')).toBeHidden();
   await page.locator('#feedback-content').fill('첨부 없이 보낸 의견');
@@ -167,6 +170,8 @@ test('feedback automatically attaches the AI result and the prompt used to creat
   await publicConsent.check();
   await page.locator('#feedback-submit').click();
   await expect(page.locator('#feedback-list')).toContainText('완성한 픽셀 이미지와 함께 보낸 의견');
+  await expect(toggle).toHaveText('첨부하기');
+  await expect(page.locator('#feedback-attachment-preview')).toBeHidden();
   expect(postBodies[1].attachment.prompt).toBe(usedPrompt);
   const submittedImage = Buffer.from(postBodies[1].attachment.imageBase64, 'base64');
   expect(await sharp(submittedImage).metadata()).toMatchObject({ format: 'png', width: 1024, height: 1024 });
