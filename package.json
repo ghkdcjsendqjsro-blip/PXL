@@ -1,0 +1,25 @@
+{
+  "name": "suminpixel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "이미지와 상상을 픽셀로 만드는 SUMINPIXEL 스튜디오",
+  "engines": {
+    "node": ">=24 <27"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env.local scripts/dev-server.mjs",
+    "start": "node --env-file-if-exists=.env.local scripts/dev-server.mjs",
+    "test": "node --test",
+    "test:e2e": "playwright test",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
+    "openai": "7.55.0",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0"
+  }
+}
