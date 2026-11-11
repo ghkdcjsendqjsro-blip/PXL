@@ -95,7 +95,7 @@ GENERATION_DAILY_LIMIT=50
 - `SUPABASE_URL`: 자신의 Supabase 프로젝트 URL.
 - `SUPABASE_SECRET_KEY`: 서버 전용 secret key. 공개 publishable key와 혼동하지 않는다. 이 설계는 서버에서 `service_role` 권한으로 접근하므로 RLS만 믿지 말고 서버에서 검증한다.
 - `RATE_LIMIT_SALT`: 암호학적으로 생성한 최소 32바이트 비밀 난수. 프로젝트 간 재사용하지 않는다.
-- `APP_ORIGIN`: 현재 배포의 정확한 `https://도메인` 또는 로컬 주소. 끝 슬래시 없이 한 개 출처로 지정한다. Preview와 Production에 각각 설정한다.
+- `APP_ORIGIN`: 끝 슬래시 없이 정확한 출처 한 개를 지정한다. Preview에는 사용할 HTTPS 주소를 설정한다. Production에서 유효한 HTTPS 주소를 지정하면 우선 사용하며, 그 외에는 Vercel의 `VERCEL_PROJECT_PRODUCTION_URL`로 운영 출처를 정한다.
 - `GENERATION_ENABLED`: `false`이면 생성만 503으로 차단하며 피드백은 사용 가능하다.
 - `GENERATION_DAILY_LIMIT`: 양의 정수, 기본 50. 비용에 맞춰 운영자가 낮출 수 있다.
 

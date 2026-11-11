@@ -81,10 +81,10 @@ T23~T25는 외부 AI 호출을 스텁 처리하고 실제 DB RPC의 동시성을
 
 ### Production
 
-1. Production 환경에 전용 키·DB·Origin·생성 한도를 등록한다. `GENERATION_ENABLED=true`를 확인한다.
+1. Production 환경에 전용 키·DB·생성 한도를 등록한다. `GENERATION_ENABLED=true`와 Vercel 시스템 환경변수 자동 노출을 확인한다. 별도 운영 도메인을 지정할 경우 `APP_ORIGIN`에 정확한 HTTPS 출처를 설정한다.
 2. 같은 커밋과 잠금 파일로 Production 배포한다. Vercel 프로젝트에서 Node 24.x·Fluid Compute·생성 함수120초 설정이 반영됐는지 확인한다.
 3. 실제 HTTPS 도메인에서 아래 배포 완료 항목을 확인한다. 환경변수를 바꾸면 새 배포로 반영됐는지 확인한다.
-4. 도메인이 바뀌면 `APP_ORIGIN`을 바꿔 다시 배포한다. 다른 도메인을 무조건 허용하는 방식으로 오류를 해결하지 않는다.
+4. 명시적으로 지정한 운영 도메인이 바뀌면 `APP_ORIGIN`을 갱신하고 다시 배포한다.
 
 ## 6. 배포 보안 헤더와 운영
 

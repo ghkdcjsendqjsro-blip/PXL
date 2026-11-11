@@ -1,8 +1,15 @@
 import { AppError, unavailable } from './errors.js';
 
 export function readConfig(env = process.env) {
+  const localDev = env.LOCAL_DEV === 'true' && !env.VERCEL;
+  let origin = env.APP_ORIGIN || (localDev ? 'http://localhost:3000' : '');
+  if (env.VERCEL_ENV === 'production' && (!origin.startsWith('https://') || !validOrigin(origin))) {
+    const productionOrigin = `https://${env.VERCEL_PROJECT_PRODUCTION_URL || ''}`;
+    origin = validOrigin(productionOrigin) ? productionOrigin : '';
+  }
+
   return {
-    origin: env.APP_ORIGIN || ((env.LOCAL_DEV === 'true' && !env.VERCEL) ? 'http://localhost:3000' : ''),
+    origin,
     openaiKey: env.OPENAI_API_KEY || '',
     imageModel: env.OPENAI_IMAGE_MODEL || 'gpt-image-2.5-flare',
     supabaseUrl: env.SUPABASE_URL || '',
@@ -10,7 +17,7 @@ export function readConfig(env = process.env) {
     rateSalt: env.RATE_LIMIT_SALT || '',
     generationEnabled: env.GENERATION_ENABLED !== 'false',
     generationDailyLimit: Number(env.GENERATION_DAILY_LIMIT || 50),
-    localDev: env.LOCAL_DEV === 'true' && !env.VERCEL,
+    localDev,
   };
 }
 

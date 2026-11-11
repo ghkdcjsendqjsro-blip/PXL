@@ -46,6 +46,20 @@ test('missing AI key keeps independent feedback capability available', async () 
   assert.deepEqual(await (await handler(new Request(`${origin}/api/status`))).json(), { aiConfigured: false, feedbackConfigured: true, localPreview: true });
 });
 
+test('Vercel production replaces a local origin with the exact production origin', async () => {
+  const production = { VERCEL: '1', VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: 'studio.example.test', APP_ORIGIN: origin };
+  const publicOrigin = 'https://studio.example.test';
+  const handler = createStatusHandler({ readConfig: () => readConfig(production) });
+  const statusFrom = (source) => handler(new Request(`${publicOrigin}/api/status`, { headers: { origin: source } }));
+
+  assert.equal((await statusFrom(publicOrigin)).status, 200);
+  assert.equal((await statusFrom(origin)).status, 403);
+  assert.equal((await statusFrom('https://elsewhere.test')).status, 403);
+  assert.equal(readConfig({ ...production, VERCEL_PROJECT_PRODUCTION_URL: 'studio.example.test/path' }).origin, '');
+  assert.equal(readConfig({ ...production, APP_ORIGIN: 'https://custom.example.test' }).origin, 'https://custom.example.test');
+  assert.equal(readConfig({ ...production, VERCEL_ENV: 'preview', APP_ORIGIN: 'https://preview.example.test' }).origin, 'https://preview.example.test');
+});
+
 test('unsupported methods advertise Allow and cross-site writes are forbidden', async () => {
   const handler = createFeedbackHandler(baseDependencies);
   const method = await handler(new Request(`${origin}/api/feedback`, { method: 'DELETE' }));
