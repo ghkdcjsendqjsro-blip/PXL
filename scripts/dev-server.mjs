@@ -16,6 +16,7 @@ process.env.APP_ORIGIN ||= origin;
 const routes = {
   '/api/generate': '../api/generate.js',
   '/api/feedback': '../api/feedback.js',
+  '/api/feedback-image': '../api/feedback-image.js',
   '/api/status': '../api/status.js',
 };
 const securityHeaders = {

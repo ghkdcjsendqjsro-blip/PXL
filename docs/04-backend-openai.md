@@ -92,10 +92,11 @@ blur, watermark, and added text unless the user explicitly asks for text.
 
 | 요청 | 입력 | 성공 |
 | --- | --- | --- |
-| `POST /api/feedback` | JSON, 최대 8 KiB. `{clientRequestId,nickname,content,consent:true,website:""}` | 최초 `201 {item}`, 같은 요청 재전송 `200 {item}` |
+| `POST /api/feedback` | JSON `{clientRequestId,nickname,content,consent:true,website:""}`와 선택 `attachment: {imageBase64,prompt}`. 본문은 텍스트만 최대 8 KiB, 첨부 포함 최대 `4 × ceil(1 MiB / 3) + 24 KiB` | 최초 `201 {item}`, 같은 요청 재전송 `200 {item}` |
 | `GET /api/feedback` | 커서 생략 또는 `?cursor=...`, 커서 최대 512바이트 | `200 {items,nextCursor}`; 고정 20개 |
+| `GET /api/feedback-image` | `?id=<피드백 UUID>` | `200 image/png`. 이미지가 없으면 `404`. 피드백 조회 한도를 공유한다. |
 
-POST의 필수·선택 필드, DB 제약과 UUID 재전송 규칙은 [피드백 상세](05-supabase-feedback.md)를 그대로 구현한다. 본문 수정과 같은 UUID의 재사용은 `409 CONFLICT`다. GET의 `cursor` 외 쿼리와 중복 파라미터는 거부한다. POST는 성공한 `item`의 공개 필드 네 개만 응답한다. GET은 `{items:[],nextCursor:null}`로 정상 빈 목록을 표현한다. DB 장애를 빈 목록으로 위장하지 않는다.
+POST의 필수·선택 필드, DB 제약과 UUID 재전송 규칙은 [피드백 상세](05-supabase-feedback.md)를 따른다. 본문이나 첨부를 수정한 뒤 같은 UUID를 재사용하면 `409 CONFLICT`다. 피드백 목록 GET은 `cursor` 외 쿼리와 중복 파라미터를 거부한다. POST와 목록 GET의 `item`은 공개 필드와 `attachment: null` 또는 `{imageUrl,prompt}`를 반환한다. GET은 `{items:[],nextCursor:null}`로 정상 빈 목록을 표현한다. DB 장애를 빈 목록으로 위장하지 않는다.
 
 ## 5. 공통 오류
 

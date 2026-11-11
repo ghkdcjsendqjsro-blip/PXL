@@ -2,8 +2,12 @@ import sharp from 'sharp';
 import { AppError } from './errors.js';
 
 export const MiB = 1024 * 1024;
+const FEEDBACK_IMAGE_LIMIT = MiB;
+const FEEDBACK_IMAGE_BASE64_LIMIT = 4 * Math.ceil(FEEDBACK_IMAGE_LIMIT / 3);
+const FEEDBACK_JSON_LIMIT = FEEDBACK_IMAGE_BASE64_LIMIT + 24 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const invalid = (message = '입력 내용을 다시 확인해 주세요.') => new AppError(400, 'INVALID_INPUT', message);
+const tooLarge = (message = '전송할 수 있는 용량을 넘었어요. 더 작은 파일을 골라 주세요.') => new AppError(413, 'PAYLOAD_TOO_LARGE', message);
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 export function isStaticPng(buffer) {
@@ -30,7 +34,7 @@ export function cleanText(value, max, { optional = false, fallback = '' } = {}) 
 export async function boundedBody(request, limit) {
   const length = request.headers.get('content-length');
   if (length && (!/^\d+$/.test(length) || Number(length) > limit)) {
-    throw new AppError(413, 'PAYLOAD_TOO_LARGE', '전송할 수 있는 용량을 넘었어요. 더 작은 파일을 골라 주세요.');
+    throw tooLarge();
   }
   if (!request.body) return Buffer.alloc(0);
   const reader = request.body.getReader();
@@ -43,7 +47,7 @@ export async function boundedBody(request, limit) {
       size += value.byteLength;
       if (size > limit) {
         await reader.cancel();
-        throw new AppError(413, 'PAYLOAD_TOO_LARGE', '전송할 수 있는 용량을 넘었어요. 더 작은 파일을 골라 주세요.');
+        throw tooLarge();
       }
       chunks.push(Buffer.from(value));
     }
@@ -54,14 +58,15 @@ export async function boundedBody(request, limit) {
   return Buffer.concat(chunks, size);
 }
 
-export async function readJson(request) {
+export async function readFeedbackJson(request) {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('content-type') || '')) {
     throw new AppError(415, 'UNSUPPORTED_MEDIA_TYPE', 'JSON 형식으로 전송해 주세요.');
   }
-  const bytes = await boundedBody(request, 8 * 1024);
+  const bytes = await boundedBody(request, FEEDBACK_JSON_LIMIT);
   try {
     const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw invalid();
+    if (!Object.hasOwn(parsed, 'attachment') && bytes.length > 8 * 1024) throw tooLarge();
     return parsed;
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -69,8 +74,23 @@ export async function readJson(request) {
   }
 }
 
+function validateFeedbackAttachment(attachment) {
+  if (attachment === undefined) return null;
+  if (!attachment || typeof attachment !== 'object' || Array.isArray(attachment)
+    || Object.keys(attachment).some((key) => !['imageBase64', 'prompt'].includes(key))
+    || typeof attachment.imageBase64 !== 'string' || !attachment.imageBase64 || typeof attachment.prompt !== 'string') {
+    throw invalid('공개할 이미지와 설명을 확인해 주세요.');
+  }
+  const prompt = cleanText(attachment.prompt, 1000, { optional: true });
+  if (attachment.imageBase64.length > FEEDBACK_IMAGE_BASE64_LIMIT) throw tooLarge('첨부 이미지는 1 MiB 이하여야 해요.');
+  const image = Buffer.from(attachment.imageBase64, 'base64');
+  if (image.length > FEEDBACK_IMAGE_LIMIT) throw tooLarge('첨부 이미지는 1 MiB 이하여야 해요.');
+  if (image.toString('base64') !== attachment.imageBase64) throw invalid('첨부 이미지 형식이 올바르지 않아요.');
+  return { image, prompt };
+}
+
 export function validateFeedback(input) {
-  if (Object.keys(input).some((key) => !['clientRequestId', 'nickname', 'content', 'consent', 'website'].includes(key))) throw invalid();
+  if (Object.keys(input).some((key) => !['clientRequestId', 'nickname', 'content', 'consent', 'website', 'attachment'].includes(key))) throw invalid();
   if (typeof input.clientRequestId !== 'string' || !UUID.test(input.clientRequestId)) throw invalid('전송 번호가 올바르지 않아요. 새로고침 후 다시 시도해 주세요.');
   if (input.consent === undefined || input.consent === false) throw new AppError(403, 'FORBIDDEN', '피드백 공개에 동의해 주세요.');
   if (input.consent !== true) throw invalid('공개 동의 항목을 확인해 주세요.');
@@ -80,7 +100,14 @@ export function validateFeedback(input) {
     nickname: cleanText(input.nickname, 20, { optional: true, fallback: '익명' }),
     content: cleanText(input.content, 500),
     consent: true,
+    attachment: validateFeedbackAttachment(input.attachment),
   };
+}
+
+export async function normalizeFeedbackAttachment(attachment) {
+  if (!attachment) return null;
+  const png = await normalizeSquarePng(attachment.image, FEEDBACK_IMAGE_LIMIT);
+  return { imageBase64: png.toString('base64'), prompt: attachment.prompt };
 }
 
 function validTimestamp(value) {
@@ -118,6 +145,28 @@ export function feedbackCursor(request) {
   return search.has('cursor') ? decodeCursor(search.get('cursor')) : null;
 }
 
+export function feedbackImageId(request) {
+  const search = new URL(request.url).searchParams;
+  const id = search.get('id');
+  if (search.size !== 1 || !id || !UUID.test(id)) throw invalid('피드백 이미지 주소가 올바르지 않아요.');
+  return id.toLowerCase();
+}
+
+async function normalizeSquarePng(buffer, limit) {
+  try {
+    if (!isStaticPng(buffer)) throw new Error('invalid static PNG');
+    const image = sharp(buffer, { limitInputPixels: 1024 * 1024 });
+    const metadata = await image.metadata();
+    if (metadata.format !== 'png' || metadata.width !== 1024 || metadata.height !== 1024 || (metadata.pages || 1) !== 1) throw new Error('dimensions');
+    const normalized = await image.rotate().flatten({ background: '#ffffff' }).removeAlpha().toColourspace('srgb').png().toBuffer();
+    if (normalized.length > limit) throw tooLarge(`변환한 이미지는 ${limit / MiB} MiB 이하여야 해요.`);
+    return normalized;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(400, 'INVALID_IMAGE', '이미지를 읽지 못했어요. 올바른 PNG 파일을 골라 주세요.');
+  }
+}
+
 export async function validateGenerate(request) {
   const contentType = request.headers.get('content-type') || '';
   if (!/^multipart\/form-data\s*;/i.test(contentType)) throw new AppError(415, 'UNSUPPORTED_MEDIA_TYPE', '이미지 전송 형식을 확인해 주세요.');
@@ -138,17 +187,7 @@ export async function validateGenerate(request) {
   }
   if (!(image instanceof File)) throw invalid('먼저 이미지를 선택해 주세요.');
   if (image.type !== 'image/png') throw new AppError(415, 'UNSUPPORTED_MEDIA_TYPE', '정규화한 PNG 이미지를 보내 주세요.');
-  if (image.size > 2 * MiB) throw new AppError(413, 'PAYLOAD_TOO_LARGE', '변환한 이미지는 2 MiB 이하여야 해요.');
-  try {
-    const buffer = Buffer.from(await image.arrayBuffer());
-    if (!isStaticPng(buffer)) throw new Error('invalid static PNG');
-    const metadata = await sharp(buffer, { limitInputPixels: 1024 * 1024 }).metadata();
-    if (metadata.format !== 'png' || metadata.width !== 1024 || metadata.height !== 1024 || (metadata.pages || 1) !== 1) throw new Error('dimensions');
-    const normalized = await sharp(buffer, { limitInputPixels: 1024 * 1024 }).rotate().flatten({ background: '#ffffff' }).removeAlpha().toColourspace('srgb').png().toBuffer();
-    if (normalized.length > 2 * MiB) throw new AppError(413, 'PAYLOAD_TOO_LARGE', '변환한 이미지는 2 MiB 이하여야 해요.');
-    return { mode, prompt, imageBuffer: normalized };
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(400, 'INVALID_IMAGE', '이미지를 읽지 못했어요. 올바른 PNG 파일을 골라 주세요.');
-  }
+  if (image.size > 2 * MiB) throw tooLarge('변환한 이미지는 2 MiB 이하여야 해요.');
+  const imageBuffer = await normalizeSquarePng(Buffer.from(await image.arrayBuffer()), 2 * MiB);
+  return { mode, prompt, imageBuffer };
 }

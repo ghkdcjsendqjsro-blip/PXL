@@ -33,6 +33,7 @@ Get-Location
   api/
     generate.js                 # POST /api/generate
     feedback.js                 # GET/POST /api/feedback
+    feedback-image.js           # GET /api/feedback-image
   server/
     env.js                      # 설정 검사, 브라우저에 제공 금지
     openai.js                   # AI 생성·편집
@@ -44,6 +45,7 @@ Get-Location
     migrations/
       001_feedback.sql          # docs05의 초기 스키마
       002_rate_limits.sql       # docs04의 카운터·함수
+      003_feedback_attachments.sql # 공개 피드백 첨부 이미지와 프롬프트
   tests/                        # 핵심 로직·API 테스트
   package.json
   package-lock.json

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { createGenerateHandler } from '../api/generate.js';
 import { createFeedbackHandler } from '../api/feedback.js';
+import { createFeedbackImageHandler } from '../api/feedback-image.js';
 import { createStatusHandler } from '../api/status.js';
 import { AppError, unavailable } from '../server/errors.js';
 import { readConfig } from '../server/env.js';
-import { decodeCursor, encodeCursor, validateFeedback, MiB } from '../server/validation.js';
+import { decodeCursor, encodeCursor, validateFeedback, normalizeFeedbackAttachment, MiB } from '../server/validation.js';
 import { createFeedbackStore } from '../server/supabase.js';
 import { clientSubject, consumeQuota } from '../server/rate-limit.js';
 import { generateImage } from '../server/openai.js';
@@ -170,6 +171,43 @@ test('feedback validates codepoints, consent, spam trap and unknown properties',
   assert.throws(() => validateFeedback({ ...input, admin: true }));
 });
 
+test('feedback only accepts bounded 1024 PNG attachments with an explicit prompt field', async () => {
+  let inserts = 0;
+  let quotaChecks = 0;
+  const imageBase64 = png.toString('base64');
+  const handler = createFeedbackHandler({ ...baseDependencies,
+    consumeQuota: async () => { quotaChecks++; },
+    createFeedbackStore: () => ({
+      insert: async (normalized) => {
+        inserts++;
+        assert.equal(normalized.attachment.prompt, '');
+        const uploaded = await sharp(Buffer.from(normalized.attachment.imageBase64, 'base64')).metadata();
+        assert.equal(uploaded.format, 'png');
+        assert.equal(uploaded.width, 1024);
+        assert.equal(uploaded.height, 1024);
+        return { item, replay: false };
+      },
+    }),
+  });
+  const submit = (attachment) => handler(request('/api/feedback', { ...input, attachment }));
+  for (const attachment of [
+    null, { imageBase64 }, { imageBase64, prompt: 'a'.repeat(1001) },
+    { imageBase64, prompt: '', original: true }, { imageBase64: `${imageBase64}\n`, prompt: '' },
+  ]) {
+    assert.equal((await submit(attachment)).status, 400);
+  }
+  assert.equal((await submit({ imageBase64: Buffer.alloc(MiB + 1).toString('base64'), prompt: '' })).status, 413);
+  assert.equal(quotaChecks, 0);
+  const wrongSize = await sharp(png).resize(32, 32).png().toBuffer();
+  for (const bytes of [wrongSize, Buffer.from('not a PNG')]) {
+    assert.equal((await submit({ imageBase64: bytes.toString('base64'), prompt: '' })).status, 400);
+  }
+  assert.equal(quotaChecks, 2);
+  assert.equal(inserts, 0);
+  assert.equal((await submit({ imageBase64, prompt: '' })).status, 201);
+  assert.equal(inserts, 1);
+});
+
 test('invalid feedback JSON and UTF8 fail before configuration, not fake success', async () => {
   let configCalls = 0;
   const handler = createFeedbackHandler({ ...baseDependencies, requireFeedbackConfig: () => { configCalls++; throw unavailable(); } });
@@ -212,9 +250,10 @@ test('feedback list rejects duplicate cursors and unknown query parameters', asy
 
 test('DB store reads 21, returns 20, and uses exact timestamp for next cursor', async () => {
   const rows = Array.from({ length: 21 }, (_, index) => ({ id: `00000000-0000-4000-8000-${String(1000 - index).padStart(12, '0')}`, nickname: '익명', content: String(index), created_at: item.createdAt }));
+  rows[0].image_prompt = '픽셀 고양이';
   const operations = [];
   const query = {
-    select: (columns) => { assert.ok(!columns.includes('*')); return query; },
+    select: (columns) => { assert.ok(!columns.includes('*') && !columns.includes('image_base64')); return query; },
     order: (column, direction) => { operations.push([column, direction]); return query; },
     limit: (n) => { assert.equal(n, 21); return query; },
     or: (condition) => { operations.push(condition); return query; },
@@ -226,7 +265,9 @@ test('DB store reads 21, returns 20, and uses exact timestamp for next cursor', 
   assert.equal(decodeCursor(list.nextCursor).createdAt, item.createdAt);
   assert.equal(decodeCursor(list.nextCursor).id, rows[19].id);
   assert.match(operations[2], /\.123456\+00:00/);
-  assert.deepEqual(Object.keys(list.items[0]).sort(), ['content', 'createdAt', 'id', 'nickname']);
+  assert.deepEqual(Object.keys(list.items[0]).sort(), ['attachment', 'content', 'createdAt', 'id', 'nickname']);
+  assert.deepEqual(list.items[0].attachment, { imageUrl: `/api/feedback-image?id=${rows[0].id}`, prompt: rows[0].image_prompt });
+  assert.equal(list.items[1].attachment, null);
 });
 
 test('DB unique conflict only replays identical normalized public payload', async () => {
@@ -240,6 +281,72 @@ test('DB unique conflict only replays identical normalized public payload', asyn
   const store = createFeedbackStore(db);
   assert.equal((await store.insert(validateFeedback(input))).replay, true);
   await assert.rejects(store.insert(validateFeedback({ ...input, content: '바뀐 내용' })), (error) => error.status === 409);
+});
+
+test('attachment is stored atomically and part of feedback retry identity', async () => {
+  const validated = validateFeedback({ ...input, attachment: { imageBase64: png.toString('base64'), prompt: '픽셀 고양이' } });
+  const submitted = { ...validated, attachment: await normalizeFeedbackAttachment(validated.attachment) };
+  let saved;
+  const db = {
+    from: () => ({
+      insert: (fields) => ({ select: (columns) => ({ single: async () => {
+        assert.ok(!columns.includes('image_base64'));
+        if (saved) return { error: { code: '23505', message: 'duplicate key violates feedback_request_unique' } };
+        saved = { ...fields, id: item.id, created_at: item.createdAt };
+        return { data: saved, error: null };
+      } }) }),
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: saved, error: null }) }) }),
+    }),
+  };
+  const store = createFeedbackStore(db);
+  const result = await store.insert(submitted);
+  assert.equal(result.replay, false);
+  assert.equal(saved.image_base64, submitted.attachment.imageBase64);
+  assert.equal(saved.image_prompt, submitted.attachment.prompt);
+  assert.deepEqual(result.item, { ...item, attachment: { imageUrl: `/api/feedback-image?id=${item.id}`, prompt: saved.image_prompt } });
+  assert.deepEqual(await store.insert(submitted), { ...result, replay: true });
+  for (const attachment of [
+    null,
+    { ...submitted.attachment, prompt: '다른 설명' },
+    { ...submitted.attachment, imageBase64: (await sharp(png).negate().png().toBuffer()).toString('base64') },
+  ]) {
+    await assert.rejects(store.insert({ ...submitted, attachment }), (error) => error.status === 409);
+  }
+});
+
+test('feedback image GET serves only one stored PNG and rejects invalid or missing IDs', async () => {
+  let reads = 0;
+  const handler = createFeedbackImageHandler({ ...baseDependencies,
+    consumeQuota: async (db, request, config, scope) => { assert.equal(scope, 'feedback_read'); },
+    createDatabase: () => ({
+      from: (table) => {
+        assert.equal(table, 'feedback');
+        return { select: (column) => {
+          assert.equal(column, 'image_base64');
+          return { eq: (column, requestedId) => {
+            assert.equal(column, 'id');
+            return { maybeSingle: async () => {
+              reads++;
+              return { data: requestedId === item.id ? { image_base64: png.toString('base64') } : null, error: null };
+            } };
+          } };
+        } };
+      },
+    }),
+  });
+  const path = `${origin}/api/feedback-image`;
+  for (const query of ['', '?id=invalid', `?id=${id}&id=${item.id}`, `?id=${item.id}&other=1`]) {
+    assert.equal((await handler(new Request(path + query))).status, 400);
+  }
+  assert.equal((await handler(new Request(`${path}?id=${item.id}`, { headers: { origin: 'https://elsewhere.test' } }))).status, 403);
+  assert.equal(reads, 0);
+  assert.equal((await handler(new Request(`${path}?id=${id}`))).status, 404);
+  const response = await handler(new Request(`${path}?id=${item.id.toUpperCase()}`));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('cross-origin-resource-policy'), 'same-origin');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
 });
 
 test('quota RPC is fail-closed and exposes safe retry metadata', async () => {

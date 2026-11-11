@@ -13,8 +13,8 @@
 - 브라우저에 Supabase SDK와 데이터베이스 키를 넣지 않는다.
 - 서버 환경변수는 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`다. 새 secret key는 `sb_secret_...` 형태이며 데이터베이스에서는 `service_role` 권한으로 동작한다. 키의 전체 값을 코드, 로그, 문서에 기록하지 않는다.
 - 서버용 클라이언트는 세션 저장과 토큰 자동 갱신을 끄고, 사용자 Authorization 헤더를 전달하지 않는다.
-- 공개 수정·삭제 API, 로그인, 관리자 화면, 댓글, 별점, 파일 첨부, 실시간 구독은 이번 범위에 없다.
-- 입력 이미지와 AI 결과는 피드백 테이블이나 Supabase Storage에 저장하지 않는다.
+- 공개 수정·삭제 API, 로그인, 관리자 화면, 댓글, 별점, 일반 파일 첨부, 실시간 구독은 이번 범위에 없다.
+- 공개에 동의한 사용자가 피드백으로 제출한 AI 픽셀 결과와 해당 프롬프트를 피드백 행에 함께 저장한다. 원본 업로드는 피드백에 첨부하지 않는다.
 
 Supabase 공식 문서는 서버 secret key가 RLS를 우회하므로 서버에서만 사용하도록 안내한다. 따라서 이 API의 검증과 응답 필드 제한이 반드시 필요하다. [공식 API key 지침](https://supabase.com/docs/guides/getting-started/api-keys)
 
@@ -27,12 +27,13 @@ Supabase 공식 문서는 서버 secret key가 RLS를 우회하므로 서버에�
 | `content` | 필수 문자열. 앞뒤 공백 제거 후 1~500자. 줄바꿈 허용. |
 | `consent` | 반드시 JSON boolean `true`. 공개 게시 동의다. 문자열 `"true"`는 거부한다. |
 | `website` | 스팸 탐지용 숨김 입력. 생략 또는 빈 문자열만 허용한다. 정상 사용자는 작성하지 않는다. |
+| `attachment` | 선택 객체 `{imageBase64,prompt}`. 이미지는 디코딩 후 최대 1 MiB인 정적 1024×1024 PNG다. 프롬프트는 해당 생성 요청에 사용한 문자열이며, 최대 1,000자이고 이미지 편집에 설명을 생략했다면 빈 문자열이다. |
 
 글자 수는 JavaScript 문자열의 UTF-16 길이 대신 `Array.from(value).length`로 센다. 예를 들어 이모지 하나를 서버·DB에서 같은 기준으로 처리한다. HTML은 입력 문자열로 저장할 수 있지만 실행하거나 HTML로 렌더링하지 않는다. NUL 문자, 잘못된 UTF-8, 배열·객체 등 문자열이 아닌 입력은 거부한다.
 
-화면의 동의 문구는 `작성한 닉네임과 피드백이 이 페이지에 공개되는 데 동의합니다.`로 한다. 처음에는 체크하지 않는다. 아래에 `이름, 연락처 등 개인정보를 적지 마세요.`를 표시한다. 체크박스는 별도의 이용약관 로그인 화면을 만들지 않고 작성 폼에 둔다.
+폼에 공개 동의 체크박스를 두고 처음에는 해제한다. 첨부가 선택되어 있으면 닉네임·피드백과 함께 이미지와 프롬프트도 공개된다고 명시한다. 사용자는 제출 전에 첨부를 제거할 수 있다. 폼 아래에 개인정보를 적지 말라고 안내한다.
 
-공개 JSON 항목은 `id`, `nickname`, `content`, `createdAt` 네 가지뿐이다. `client_request_id`, `public_consent`, 요청 제한용 값, 데이터베이스 오류 상세는 공개하지 않는다.
+공개 JSON 항목은 `id`, `nickname`, `content`, `createdAt`, `attachment`다. `attachment`는 `null` 또는 `{imageUrl,prompt}`다. `imageUrl`은 같은 출처의 `/api/feedback-image?id=<피드백 UUID>`이며 이미지 바이트는 해당 주소에서 받는다. `client_request_id`, `public_consent`, 요청 제한용 값, 데이터베이스 오류 상세는 공개하지 않는다.
 
 ## 3. 최초 데이터베이스 SQL
 
@@ -72,6 +73,8 @@ commit;
 
 `id`는 각 피드백의 식별번호이고, `client_request_id`는 전송 재시도에 따른 중복 저장을 막는 번호다. 둘을 혼용하지 않는다. 날짜와 `id`는 서버/DB에서 생성하며 브라우저가 지정하게 하지 않는다. DB의 `char_length`는 코드포인트 기준 길이를 검사한다. 서버에서는 이보다 먼저 전체 앞뒤 공백을 제거한다.
 
+`supabase/migrations/003_feedback_attachments.sql`은 `image_base64`와 `image_prompt`를 추가한다. 두 필드는 함께 저장하거나 함께 비워 둔다. 마이그레이션 전 작성한 피드백도 계속 조회할 수 있다.
+
 RLS는 켜되 `anon`, `authenticated`용 허용 정책은 만들지 않는다. 해당 역할과 `PUBLIC`의 테이블 권한도 회수한다. 서비스의 익명 사용자는 Node API를 통해 공개 데이터를 받는다. `service_role`에는 이 테이블의 조회·삽입 권한만 부여한다. SQL Editor의 운영자 권한은 별개다. Supabase는 테이블 권한과 RLS가 서로 다른 검사라고 설명한다. [RLS 공식 설명](https://supabase.com/docs/guides/database/postgres/row-level-security), [Data API 보안](https://supabase.com/docs/guides/api/securing-your-api)
 
 ## 4. 저장과 재전송 처리
@@ -91,11 +94,11 @@ RLS는 켜되 `anon`, `authenticated`용 허용 정책은 만들지 않는다. �
 서버 처리 순서는 다음과 같다.
 
 1. 같은 사이트 요청인지, JSON 형식과 크기 제한이 맞는지 확인한다. 상세 제한은 [API 명세](04-backend-openai.md)를 따른다.
-2. 타입, UUID, 글자 수, 공개 동의, 숨김 입력을 검증하고 닉네임·본문을 정규화한다.
+2. 타입, UUID, 글자 수, 공개 동의, 숨김 입력을 검증하고 닉네임·본문을 정규화한다. 첨부 PNG는 형식·크기·해상도를 확인하고 다시 인코딩한다.
 3. [요청 제한 RPC](04-backend-openai.md)의 피드백 정책을 적용한다. HMAC 처리한 클라이언트 식별값별 고정 600초 구간에 최대 10회다. 저장소 오류로 검사할 수 없으면 `503`을 반환하고 삽입하지 않는다.
-4. `client_request_id`, 정규화한 `nickname`, `content`, `public_consent:true`만 삽입하고 공개 필드를 명시적으로 선택한다. `select('*')`를 사용하지 않는다.
+4. `client_request_id`, 정규화한 `nickname`, `content`, `public_consent:true`와 선택 이미지·프롬프트를 한 행에 삽입하고 필요한 필드를 명시적으로 선택한다. `select('*')`를 사용하지 않는다.
 5. 최초 저장은 `201 {"item": ...}`를 반환한다.
-6. `feedback_request_unique`의 중복 오류일 때만 해당 `client_request_id`로 기존 행을 조회한다. 정규화한 닉네임·본문·동의가 모두 같은 경우 `200 {"item": ...}`를 반환한다. 다른 입력이면 `409`로 거부한다. 다른 DB 제약 오류를 중복 성공으로 처리하지 않는다.
+6. `feedback_request_unique`의 중복 오류일 때만 해당 `client_request_id`로 기존 행을 조회한다. 정규화한 닉네임·본문·동의·첨부가 모두 같은 경우 `200 {"item": ...}`를 반환한다. 다른 입력이면 `409`로 거부한다. 다른 DB 제약 오류를 중복 성공으로 처리하지 않는다.
 
 경쟁 요청이 동시에 도착해도 DB의 UNIQUE 제약이 중복을 막는다. 사전 조회만으로 중복 여부를 판단하지 않는다. UUID는 인증 수단으로 사용하지 않고, 기존 행의 비공개 필드를 응답하지 않는다. 충돌 응답에 기존 본문도 싣지 않는다.
 
@@ -112,7 +115,11 @@ RLS는 켜되 `anon`, `authenticated`용 허용 정책은 만들지 않는다. �
       "id": "e4fef9f1-4a50-4404-a52d-bfd0f470752d",
       "nickname": "수민",
       "content": "픽셀 크기를 고를 수 있어서 좋아요.",
-      "createdAt": "2026-11-11T03:00:00.123456+00:00"
+      "createdAt": "2026-11-11T03:00:00.123456+00:00",
+      "attachment": {
+        "imageUrl": "/api/feedback-image?id=e4fef9f1-4a50-4404-a52d-bfd0f470752d",
+        "prompt": "별이 뜬 밤의 작은 정원"
+      }
     }
   ],
   "nextCursor": null
@@ -139,7 +146,7 @@ Supabase JavaScript SDK에서는 같은 조건을 `created_at < t OR (created_at
 - `nextCursor:null`이면 더 보기 버튼을 숨기고 `모든 피드백을 확인했어요.`를 표시한다.
 - 새 피드백 저장 또는 `새로고침`은 커서를 초기화하고 첫 페이지부터 다시 시작한다. 새 행을 중간에 끼워 넣어 기존 커서의 의미를 바꾸지 않는다.
 - 더 보기가 실패하면 기존 목록을 유지하고 같은 커서로 재시도한다. 목록 조회는 클라이언트 식별값별 60초에 60회로 제한한다.
-- 내용은 `textContent`로 렌더링하고 CSS `white-space: pre-wrap; overflow-wrap: anywhere`를 사용한다. 링크 자동 변환이나 `innerHTML`은 사용하지 않는다.
+- 피드백과 프롬프트는 `textContent`로 렌더링하고 CSS `white-space: pre-wrap; overflow-wrap: anywhere`를 사용한다. 링크 자동 변환이나 `innerHTML`은 사용하지 않는다.
 - 화면 날짜는 한국어로 표시한다. 공개 API는 UTC 오프셋이 포함된 DB 시간 문자열을 유지한다.
 
 ## 6. 운영 데이터와 장애 처리
@@ -149,7 +156,7 @@ Supabase JavaScript SDK에서는 같은 조건을 `created_at < t OR (created_at
 | 공개 피드백 | 서비스 운영 중 보관. 운영자가 스팸·개인정보 포함 게시물을 수동 삭제할 수 있다. |
 | 공개 동의 | 게시 행에 `true`를 보관. 별도의 개인 신원 수집은 하지 않는다. |
 | 요청 제한 데이터 | [API 보안 문서](04-backend-openai.md)의 HMAC·구간값만 보관한다. 클라이언트 버킷은 시작 후 24시간에 만료하고 시간별 정리 작업으로 정상 운영 시 최대 약 25시간 내 제거한다. 원본 IP는 저장하지 않는다. |
-| 이미지·프롬프트·결과 | 피드백 DB에 저장하지 않는다. |
+| 공개 피드백 첨부 | 사용자 동의를 받아 제출한 픽셀 결과와 프롬프트를 피드백 행에 보관한다. 운영자가 행을 삭제하면 첨부도 함께 삭제된다. |
 
 운영자는 Supabase Dashboard의 Table Editor에서 `feedback` 행의 `id`와 내용을 확인한 뒤 필요한 행만 삭제한다. 전체 비우기나 공개 삭제 API를 만들지 않는다. 삭제는 되돌리기 어려우므로 운영자가 대상을 확인한다. 서비스 화면의 피드백 공개 안내는 삭제 가능성을 포함하고, 별도의 연락 채널을 꾸며 넣지 않는다.
 
@@ -157,7 +164,7 @@ DB 장애 시 목록은 빈 목록으로 위장하지 않는다. 기존 목록�
 
 ## 7. 설정과 완료 검증
 
-1. 개발용 Supabase 프로젝트를 만들고 SQL Editor에서 최초 SQL을 실행한다. 테이블명, 제약, 인덱스가 생겼는지 확인한다.
+1. 개발용 Supabase 프로젝트를 만들고 SQL Editor에서 `001_feedback.sql`, `002_rate_limits.sql`, `003_feedback_attachments.sql`을 순서대로 적용한다. 기존 프로젝트에는 아직 적용하지 않은 마이그레이션을 적용한다. 테이블, 제약, 인덱스와 첨부 열을 확인한다.
 2. 서버 환경변수를 설정한다. 키는 `.env.local`과 Vercel 서버 환경에만 두고 Git에서 제외한다.
 3. `pg_tables.rowsecurity`가 `true`인지, `pg_policies`의 `feedback` 정책이 0개인지 확인한다.
 4. `has_table_privilege('anon','public.feedback','SELECT')`와 INSERT 결과, `authenticated`의 같은 결과가 모두 `false`인지 확인한다. `service_role`의 SELECT·INSERT는 `true`, UPDATE·DELETE는 `false`여야 한다.

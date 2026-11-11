@@ -129,7 +129,14 @@
             <div class="label-row"><label for="feedback-nickname">닉네임 <span class="optional">선택</span></label><span class="character-count">최대 20자</span></div><input id="feedback-nickname" type="text" placeholder="비워 두면 익명으로 남겨요" autocomplete="nickname">
             <div class="label-row feedback-content-label"><label for="feedback-content">피드백</label><span id="feedback-count" class="character-count">0 / 500</span></div><textarea id="feedback-content" rows="4" placeholder="좋았던 점, 아쉬웠던 점, 보고 싶은 기능을 알려 주세요." aria-describedby="feedback-count feedback-privacy"></textarea>
             <div class="bot-field" aria-hidden="true"><label for="feedback-website">Website</label><input id="feedback-website" type="text" name="website" tabindex="-1" autocomplete="off"></div>
-            <label class="consent-label"><input id="feedback-consent" type="checkbox"><span>닉네임과 피드백이 이 페이지에 공개되는 데 동의합니다.</span></label><p id="feedback-privacy" class="field-help">전화번호, 이메일 등 개인정보는 적지 말아 주세요.</p>
+            <div id="feedback-attachment" class="feedback-attachment" hidden>
+              <div class="feedback-attachment-heading"><strong>최근 생성 결과</strong><button id="feedback-attachment-toggle" class="text-button" type="button" aria-controls="feedback-attachment-preview">첨부 빼기</button></div>
+              <div id="feedback-attachment-preview" class="feedback-attachment-preview">
+                <img id="feedback-attachment-image" alt="피드백에 첨부할 픽셀 이미지" width="76" height="76">
+                <div><strong class="feedback-prompt-label">사용한 프롬프트</strong><p id="feedback-attachment-prompt"></p></div>
+              </div>
+            </div>
+            <label class="consent-label"><input id="feedback-consent" type="checkbox"><span id="feedback-consent-label">닉네임과 피드백이 이 페이지에 공개되는 데 동의합니다.</span></label><p id="feedback-privacy" class="field-help">전화번호, 이메일 등 개인정보는 적지 말아 주세요.</p>
             <button id="feedback-submit" class="button button-primary feedback-submit" type="submit">피드백 보내기</button><div id="feedback-message" class="notice" role="status" aria-live="polite" hidden></div>
           </form>
         </div>
@@ -142,7 +149,7 @@
     </section>
   </main>
 
-  <footer class="site-footer"><div class="page-width footer-inner"><div><a class="footer-brand" href="#top">SUMINPIXEL<span aria-hidden="true">✦</span></a><p>BIG IDEAS. TINY PIXELS.</p></div><p class="footer-privacy">AI 만들기에는 OpenAI가 사용됩니다. 입력·결과 이미지는 서비스에 영구 저장하지 않아요.<br>생성 결과는 현재 화면에서 다운로드해 주세요. 피드백은 공개 저장됩니다.</p><a class="back-top" href="#top">위로 <span aria-hidden="true">↑</span></a></div></footer>
+  <footer class="site-footer"><div class="page-width footer-inner"><div><a class="footer-brand" href="#top">SUMINPIXEL<span aria-hidden="true">✦</span></a><p>BIG IDEAS. TINY PIXELS.</p></div><p class="footer-privacy">AI 만들기에는 OpenAI가 사용됩니다. 업로드한 원본 사진은 서비스에 저장하지 않아요.<br>피드백과 함께 보낸 결과 이미지와 프롬프트는 공개 저장됩니다.</p><a class="back-top" href="#top">위로 <span aria-hidden="true">↑</span></a></div></footer>
   <noscript><p class="noscript-message">SUMINPIXEL을 사용하려면 브라우저에서 JavaScript를 켜 주세요.</p></noscript>
 </body>
 </html>

@@ -15,6 +15,7 @@ const download = $('#download-button');
 const localButton = $('#local-preview-button');
 const demoButton = $('#demo-button');
 const format = new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+let nextGenerationId = 0;
 
 function notify(text, tone='error') {
   message.textContent = text; message.hidden = false; message.dataset.tone = tone;
@@ -100,14 +101,14 @@ function showResult(original=false) {
   resultImage.alt = original ? '이 결과를 만들 때 사용한 원본 이미지' : `${state.result.kindLabel}. ${state.result.grid}×${state.result.grid} 격자, ${state.result.palette==='original'?'원본 색상':`최대 ${state.result.palette}색`}.`;
   $('#show-original').setAttribute('aria-pressed',String(original)); $('#show-result').setAttribute('aria-pressed',String(!original));
 }
-async function render(source,kind,originalUrl=null) {
+async function render(source,kind,originalUrl=null,generation=null) {
   const version = ++state.renderVersion;
   const selected = options();
   const output = await renderPixelImage(source,selected);
   if(version!==state.renderVersion){URL.revokeObjectURL(output.url);return;}
   const old = state.result;
   const kindLabel = {demo:'데모 이미지 · AI 사용 안 함',local:'로컬 픽셀 미리보기 · AI 사용 안 함',ai:'AI로 만든 픽셀 이미지'}[kind];
-  state.result = {...output,source,kind,kindLabel,originalUrl};
+  state.result = {...output,source,kind,kindLabel,originalUrl,generation};
   $('#result-empty').hidden = true; $('#result-content').hidden = false;
   $('#result-kind').textContent = kindLabel;
   $('#result-meta').textContent = `1024 × 1024 PNG · ${selected.grid} × ${selected.grid} 격자 · ${selected.palette==='original'?'원본 색상':`최대 ${selected.palette}색`}`;
@@ -119,6 +120,7 @@ async function render(source,kind,originalUrl=null) {
   download.classList.remove('is-disabled');
   const stamp = format.format(new Date()).replace(/[-: ]/g,'');
   download.download = `suminpixel-${stamp.slice(0,8)}-${stamp.slice(8)}.png`;
+  if (generation) feedback.setGeneratedAttachment({ pngBlob:output.blob, prompt:generation.prompt, generationId:generation.id });
   if(old){URL.revokeObjectURL(old.url); if(old.originalUrl && old.originalUrl!==originalUrl && old.originalUrl!==state.input?.previewUrl)URL.revokeObjectURL(old.originalUrl);}
 }
 localButton.addEventListener('click',async()=>{
@@ -149,15 +151,16 @@ form.addEventListener('submit',async event=>{
     if(response.mimeType!=='image/png'||response.width!==512||response.height!==512||typeof response.imageBase64!=='string')throw new Error('이미지 응답을 읽지 못했어요.');
     source=await imageFromUrl(`data:image/png;base64,${response.imageBase64}`);
     progress.textContent='이미지를 픽셀로 다듬고 있어요…';
-    await render(source,'ai',state.mode==='image'?state.input.previewUrl:null);
+    const generation = { id:++nextGenerationId, prompt };
+    await render(source,'ai',state.mode==='image'?state.input.previewUrl:null,generation);
     notify('나만의 픽셀 이미지가 완성됐어요. PNG로 저장해 보세요.','success');
   } catch(error){notify(error.code==='TIMEOUT'?'생성 대기 시간이 초과됐어요. 다시 요청하면 이전 생성 비용과 별도로 처리될 수 있어요.':friendlyError(error));}
   finally{busy(false);}
 });
 for(const name of ['grid','palette'])form.querySelectorAll(`input[name="${name}"]`).forEach(input=>input.addEventListener('change',async()=>{
   if(!state.result||state.busy)return;clearMessage();
-  const {source,kind,originalUrl}=state.result;
-  try{await render(source,kind,originalUrl);}catch(error){notify(friendlyError(error));}
+  const {source,kind,originalUrl,generation}=state.result;
+  try{await render(source,kind,originalUrl,generation);}catch(error){notify(friendlyError(error));}
 }));
 $('#show-original').addEventListener('click',()=>showResult(true));
 $('#show-result').addEventListener('click',()=>showResult(false));
@@ -172,7 +175,9 @@ async function loadStatus(){
     $('#connection-status').textContent=state.capabilities.aiConfigured?'AI 생성 연결 설정됨 · 로컬 체험 가능':'로컬 체험 가능 · AI 생성 연결 대기';
   }catch{$('#connection-status').textContent='로컬 체험 가능 · 연결 상태 확인 중';}
 }
-switchTab('image');initFeedback();loadStatus();
+switchTab('image');
+const feedback = initFeedback();
+loadStatus();
 window.addEventListener('pagehide',event=>{
   if (event.persisted) return;
   const urls=new Set([state.input?.previewUrl,state.result?.url,state.result?.originalUrl]);

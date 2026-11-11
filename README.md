@@ -1,6 +1,6 @@
 # SUMINPIXEL
 
-이미지를 첨부하거나 원하는 장면을 글로 써 픽셀 이미지를 만들고, 1024×1024 PNG로 내려받는 한국어 웹 스튜디오입니다. 로그인 없이 공개 피드백을 남길 수 있습니다.
+이미지를 첨부하거나 원하는 장면을 글로 써 픽셀 이미지를 만들고, 1024×1024 PNG로 내려받는 한국어 웹 스튜디오입니다. 로그인 없이 공개 피드백을 남길 수 있습니다. AI로 만든 최신 픽셀 결과와 사용한 프롬프트가 피드백에 자동 첨부되며, 제출 전에 뺄 수 있습니다. 첨부를 유지하고 공개에 동의해 제출하면 이미지와 프롬프트도 목록에 공개됩니다.
 
 ## 로컬에서 실행
 
@@ -24,7 +24,7 @@ npm run dev
 
 로컬 미리보기와 별도로 실제 OpenAI 이미지 생성·편집과 Supabase 익명 피드백 API가 구현되어 있습니다. 연결 설정이 없으면 준비 중이라고 안내합니다. AI 생성의 요청 횟수 제한도 Supabase를 사용하므로 실제 AI 생성을 쓰려면 두 서비스 설정이 모두 필요합니다.
 
-1. 개발용 Supabase 프로젝트의 SQL Editor에서 `supabase/migrations/001_feedback.sql`, `002_rate_limits.sql`을 순서대로 실행합니다. [Supabase 지침](docs/05-supabase-feedback.md)에서 테이블과 권한을 확인할 수 있습니다.
+1. Supabase SQL Editor에서 `supabase/migrations`의 `001_feedback.sql`, `002_rate_limits.sql`, `003_feedback_attachments.sql`을 순서대로 적용합니다. 앞선 두 파일을 적용한 프로젝트에는 `003_feedback_attachments.sql`을 추가로 적용합니다. [Supabase 지침](docs/05-supabase-feedback.md)에서 테이블과 권한을 확인할 수 있습니다.
 2. `.env.example`을 복사해 `.env.local`을 만듭니다. 이미 파일이 있다면 필요한 항목만 수정하세요.
 3. `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `OPENAI_API_KEY`를 본인의 프로젝트 값으로 채웁니다. `RATE_LIMIT_SALT`에는 프로젝트 전용 난수를 넣습니다. 아래 명령은 32바이트 난수를 만드는 예시입니다.
 
@@ -45,7 +45,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-단위 테스트는 이미지 검증과 색상 처리, API 요청 규격, 피드백 정렬과 중복 전송, 한도 오류를 확인합니다. 브라우저 테스트는 파일 첨부, 1024 PNG, 실제 픽셀 블록·색상 수, 모바일 레이아웃을 확인합니다. 테스트의 AI·피드백 성공 응답은 외부 호출을 대체한 테스트 응답입니다. 실제 OpenAI·Supabase 연결은 키를 설정한 뒤 따로 확인해야 합니다.
+단위 테스트는 이미지 검증과 색상 처리, API 요청 규격, 피드백 정렬과 중복 전송, 한도 오류를 확인합니다. 브라우저 테스트는 파일 첨부, 1024 PNG, 실제 픽셀 블록·색상 수, 모바일 레이아웃, 피드백의 결과·프롬프트 첨부와 공개 목록 표시를 확인합니다. 브라우저 테스트는 AI·피드백 API에 대체 응답을 사용합니다. 실제 OpenAI·Supabase 연결은 키를 설정한 뒤 따로 확인해야 합니다.
 
 ## 파일 구성
 

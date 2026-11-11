@@ -6,6 +6,7 @@
   "functions": {
     "api/generate.js": { "maxDuration": 120 },
     "api/feedback.js": { "maxDuration": 15 },
+    "api/feedback-image.js": { "maxDuration": 15 },
     "api/status.js": { "maxDuration": 10 }
   },
   "headers": [

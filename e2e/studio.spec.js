@@ -1,6 +1,15 @@
 import { test, expect } from '@playwright/test';
 import sharp from 'sharp';
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/status', route => route.fulfill({
+    json: { aiConfigured: false, feedbackConfigured: false, localPreview: true },
+  }));
+  await page.route('**/api/feedback*', route => route.fulfill({
+    json: { items: [], nextCursor: null },
+  }));
+});
+
 async function fixtureImage(size=1024) {
   return sharp({create:{width:size,height:size,channels:3,background:'#bc94eb'}})
     .composite([{input:Buffer.from('<svg width="1024" height="1024"><rect x="128" y="128" width="384" height="768" fill="#e93794"/><circle cx="700" cy="350" r="180" fill="#72cb96"/></svg>'),top:0,left:0}])
@@ -96,6 +105,79 @@ test('feedback: safe public text, pagination, consent and UUID retry',async({pag
   await expect(page.locator('#feedback-content')).toHaveValue('색상이 예뻐요');
   await page.locator('#feedback-submit').click();await expect(page.locator('#feedback-message')).toContainText('등록');
   expect(posts[0].clientRequestId).toBe(posts[1].clientRequestId);await expect(page.locator('#feedback-content')).toBeEmpty();
+});
+
+test('feedback automatically attaches the AI result and the prompt used to create it', async ({ page }) => {
+  const source = await sharp({ create: { width: 512, height: 512, channels: 3, background: '#c388b8' } }).png().toBuffer();
+  const postBodies = [];
+  const items = [];
+  const attachmentId = 'e4fef9f1-4a50-4404-a52d-bfd0f470752d';
+  const imagePath = `/api/feedback-image?id=${attachmentId}`;
+  const usedPrompt = '달빛 아래 고양이 <img src=x>';
+  await page.route('**/api/status', route => route.fulfill({
+    json: { aiConfigured: true, feedbackConfigured: true, localPreview: true },
+  }));
+  await page.route('**/api/generate', route => route.fulfill({
+    json: { requestId: 'test', imageBase64: source.toString('base64'), mimeType: 'image/png', width: 512, height: 512 },
+  }));
+  await page.route('**/api/feedback', async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { items, nextCursor: null } });
+      return;
+    }
+    const body = route.request().postDataJSON();
+    postBodies.push(body);
+    const item = {
+      id: body.attachment ? attachmentId : '219a8b4a-b32a-4497-9ab1-857a9b988821', nickname: '익명', content: body.content,
+      createdAt: '2026-11-11T03:00:00.123456+00:00',
+      attachment: body.attachment ? { imageUrl: imagePath, prompt: body.attachment.prompt } : null,
+    };
+    items.unshift(item);
+    await route.fulfill({ status: 201, json: { item } });
+  });
+  await page.route(`**${imagePath}`, route => route.fulfill({
+    contentType: 'image/png', body: Buffer.from(postBodies.find(body => body.attachment).attachment.imageBase64, 'base64'),
+  }));
+
+  await page.goto('/');
+  await page.locator('#tab-prompt').click();
+  await page.locator('#text-prompt').fill(` ${usedPrompt} `);
+  await page.locator('#generate-button').click();
+  await expect(page.locator('#result-kind')).toHaveText('AI로 만든 픽셀 이미지');
+  await expect(page.locator('#feedback-attachment-image')).toBeVisible();
+  await expect(page.locator('#feedback-attachment-prompt')).toHaveText(usedPrompt);
+  await page.locator('#text-prompt').fill('다음 작품에 쓸 설명');
+  await expect(page.locator('#feedback-attachment-prompt')).toHaveText(usedPrompt);
+
+  const toggle = page.locator('#feedback-attachment-toggle');
+  await toggle.click();
+  await expect(page.locator('#feedback-attachment-preview')).toBeHidden();
+  await page.locator('#feedback-content').fill('첨부 없이 보낸 의견');
+  await page.locator('#feedback-consent').check();
+  await page.locator('#feedback-submit').click();
+  await expect(page.locator('#feedback-list')).toContainText('첨부 없이 보낸 의견');
+  expect(postBodies[0]).not.toHaveProperty('attachment');
+
+  await expect(page.locator('#feedback-attachment-preview')).toBeHidden();
+  await toggle.click();
+  await expect(page.locator('#feedback-attachment-preview')).toBeVisible();
+  const publicConsent = page.getByRole('checkbox', { name: /첨부 이미지와 프롬프트가 이 페이지에 공개/ });
+  await expect(publicConsent).not.toBeChecked();
+  await page.locator('#feedback-content').fill('완성한 픽셀 이미지와 함께 보낸 의견');
+  await publicConsent.check();
+  await page.locator('#feedback-submit').click();
+  await expect(page.locator('#feedback-list')).toContainText('완성한 픽셀 이미지와 함께 보낸 의견');
+  expect(postBodies[1].attachment.prompt).toBe(usedPrompt);
+  const submittedImage = Buffer.from(postBodies[1].attachment.imageBase64, 'base64');
+  expect(await sharp(submittedImage).metadata()).toMatchObject({ format: 'png', width: 1024, height: 1024 });
+
+  await page.reload();
+  const publicAttachment = page.locator('#feedback-list .feedback-item-attachment');
+  await expect(publicAttachment.locator('.feedback-item-prompt')).toHaveText(usedPrompt);
+  await expect(publicAttachment.locator('img')).toHaveCount(1);
+  await expect(publicAttachment.locator('img')).toHaveAttribute('src', imagePath);
+  await publicAttachment.scrollIntoViewIfNeeded();
+  await expect.poll(() => publicAttachment.locator('img').evaluate(image => image.naturalWidth)).toBe(1024);
 });
 
 for(const width of [375,320])test(`responsive ${width}px: no overflow and demo controls work`,async({page})=>{
